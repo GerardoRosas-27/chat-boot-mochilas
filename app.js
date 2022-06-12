@@ -6,7 +6,7 @@ const fs = require('fs');
 const express = require('express');
 const cors = require('cors')
 const qrcode = require('qrcode-terminal');
-const { Client } = require('whatsapp-web.js');
+const { Client, Buttons } = require('whatsapp-web.js');
 const mysqlConnection = require('./config/mysql')
 const { middlewareClient } = require('./middleware/client')
 const { generateImage, cleanNumber, checkEnvFile, createClient, isValidNumber } = require('./controllers/handle')
@@ -17,6 +17,7 @@ const { sendMedia, sendMessage, lastTrigger, sendMessageButton, readChat } = req
 const app = express();
 app.use(cors())
 app.use(express.json())
+app.use(express.static('imagenes'));
 const MULTI_DEVICE = process.env.MULTI_DEVICE || 'true';
 const server = require('http').Server(app)
 
@@ -25,15 +26,22 @@ const SESSION_FILE_PATH = './session.json';
 var client;
 var sessionData;
 
+var activeBoot = true;
+
 app.use('/', require('./routes/web'))
 
+
+app.get('/imagenes/:img', function (req, res) {
+    res.sendFile(__dirname + `/imagenes/${req.params.img}`);
+});
 /**
  * Escuchamos cuando entre un mensaje
  */
 const listenMessage = () => client.on('message', async msg => {
+    console.log("client inital: ", msg)
     const { from, body, hasMedia } = msg;
 
-    if(!isValidNumber(from)){
+    if (!isValidNumber(from)) {
         return
     }
 
@@ -42,7 +50,7 @@ const listenMessage = () => client.on('message', async msg => {
         return
     }
     message = body.toLowerCase();
-    console.log('BODY',message)
+    console.log('BODY', message)
     const number = cleanNumber(from)
     await readChat(number, message)
 
@@ -50,6 +58,7 @@ const listenMessage = () => client.on('message', async msg => {
      * Guardamos el archivo multimedia que envia
      */
     if (process.env.SAVE_MEDIA && hasMedia) {
+        console.log("entro save media");
         const media = await msg.downloadMedia();
         saveMedia(media);
     }
@@ -59,7 +68,7 @@ const listenMessage = () => client.on('message', async msg => {
      */
 
     if (process.env.DATABASE === 'dialogflow') {
-        if(!message.length) return;
+        if (!message.length) return;
         const response = await bothResponse(message);
         await sendMessage(client, from, response.replyMessage);
         if (response.media) {
@@ -74,58 +83,74 @@ const listenMessage = () => client.on('message', async msg => {
     * a tu gusto!
     */
 
-    const lastStep = await lastTrigger(from) || null;
-    if (lastStep) {
-        const response = await responseMessages(lastStep)
-        await sendMessage(client, from, response.replyMessage);
-    }
+    let lastTrigger = ""
 
     /**
      * Respondemos al primero paso si encuentra palabras clave
      */
-    const step = await getMessages(message);
+    let step = await getMessages(message);
 
     if (step) {
-        const response = await responseMessages(step);
-
-        /**
-         * Si quieres enviar botones
-         */
-
-        await sendMessage(client, from, response.replyMessage, response.trigger);
-
-        if(response.hasOwnProperty('actions')){
-            const { actions } = response;
-            await sendMessageButton(client, from, null, actions);
-            return
+        if (step === "STEP_1") {
+            activeBoot = true;
+            console.log("entro activeBoot true: ", activeBoot);
         }
-
-        if (!response.delay && response.media) {
-            sendMedia(client, from, response.media);
-        }
-        if (response.delay && response.media) {
-            setTimeout(() => {
-                sendMedia(client, from, response.media);
-            }, response.delay)
+        if (activeBoot) {
+            do {
+                let result = await stepSendMessage(client, from, lastTrigger ? lastTrigger : step);
+                lastTrigger = result.trigger;
+            } while (lastTrigger);
         }
         return
     }
 
+    console.log("activeBoot: ", activeBoot);
     //Si quieres tener un mensaje por defecto
-    if (process.env.DEFAULT_MESSAGE === 'true') {
+    if (process.env.DEFAULT_MESSAGE === 'true' && activeBoot) {
         const response = await responseMessages('DEFAULT')
         await sendMessage(client, from, response.replyMessage, response.trigger);
 
         /**
          * Si quieres enviar botones
          */
-        if(response.hasOwnProperty('actions')){
+        if (response.hasOwnProperty('actions')) {
             const { actions } = response;
             await sendMessageButton(client, from, null, actions);
         }
         return
     }
 });
+const stepSendMessage = async (client, from, step) => {
+
+    let response = await responseMessages(step);
+    console.log("response trigger: ", response.trigger);
+
+    if (step === "STEP_0") {
+        activeBoot = false;
+        console.log("entro activeBoot false: ", activeBoot);
+    }
+    await sendMessage(client, from, response.replyMessage, response.trigger);
+    /**
+       * Si quieres enviar botones
+       */
+    if (response.hasOwnProperty('actions')) {
+        const { actions } = response;
+
+        const { title = null, message = null, footer = null, buttons = [] } = actions;
+        let button = new Buttons(message, [...buttons], title, footer);
+        console.log("enviar bottons: ", { from, button });
+        let responsB = await client.sendMessage(from, button);
+        console.log("response bootons: ", responsB);
+        return { trigger: response.trigger }
+    }
+
+    if (response.media) {
+        await sendMedia(client, from, response.media);
+        return { trigger: response.trigger }
+    } 
+   return { trigger: response.trigger }
+    
+}
 
 /**
  * Revisamos si tenemos credenciales guardadas para inciar sessio
@@ -134,11 +159,11 @@ const listenMessage = () => client.on('message', async msg => {
 const withSession = () => {
     console.log(`Validando session con Whatsapp...`)
     sessionData = require(SESSION_FILE_PATH);
-    client = new Client(createClient(sessionData,true));
+    client = new Client(createClient(sessionData, true));
 
     client.on('ready', () => {
         connectionReady()
-        listenMessage()
+        listenMessage();
     });
 
     client.on('auth_failure', () => connectionLost())
@@ -182,7 +207,7 @@ const withOutSession = () => {
 
     client.on('authenticated', (session) => {
         sessionData = session;
-        if(sessionData){
+        if (sessionData) {
             fs.writeFile(SESSION_FILE_PATH, JSON.stringify(session), function (err) {
                 if (err) {
                     console.log(`Ocurrio un error con el archivo: `, err);
