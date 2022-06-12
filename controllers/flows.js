@@ -9,9 +9,13 @@ const getMessages = async (message) => {
 const responseMessages = async (step) => {
     const data = await reply(step)
     if(data && data.media){
-        const file = checkIsUrl(data.media) ? await saveExternalFile(data.media) : data.media;
+        console.log("url media: ", data.media);
+        //const file = await saveExternalFile(data.media);
+        const file = data.media;
+        console.log("responseMessages media: ", {...data,...{media:file}});
         return {...data,...{media:file}}
     }
+    console.log("responseMessages: ", data);
     return data
 }
 

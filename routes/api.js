@@ -4,4 +4,6 @@ const { sendMessagePost } = require('../controllers/web')
 
 router.post('/send', sendMessagePost)
 
+
+
 module.exports = router

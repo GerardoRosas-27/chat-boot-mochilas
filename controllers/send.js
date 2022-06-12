@@ -15,7 +15,25 @@ const { saveMessage } = require('../adapter')
  * @param {*} fileName 
  */
 
-const sendMedia = (client, number, fileName) => {
+const sendMedia = async (client, number, fileName) => {
+    number = cleanNumber(number)
+    const file = `${DIR_MEDIA}/${fileName}`;
+    if (fs.existsSync(file)) {
+        const media = MessageMedia.fromFilePath(file);
+        console.log("mensaje: ", { number, media });
+        await client.sendMessage(number, media, { sendAudioAsVoice: false });
+        return
+    }
+    return
+}
+
+/**
+ * Enviamos archivos como notas de voz
+ * @param {*} number 
+ * @param {*} fileName 
+ */
+
+const sendMediaVoiceNote = (client, number, fileName) => {
     number = cleanNumber(number)
     const file = `${DIR_MEDIA}/${fileName}`;
     if (fs.existsSync(file)) {
@@ -25,32 +43,19 @@ const sendMedia = (client, number, fileName) => {
 }
 
 /**
- * Enviamos archivos como notas de voz
- * @param {*} number 
- * @param {*} fileName 
- */
-
- const sendMediaVoiceNote = (client, number, fileName) => {
-    number = cleanNumber(number)
-    const file = `${DIR_MEDIA}/${fileName}`;
-    if (fs.existsSync(file)) {
-        const media = MessageMedia.fromFilePath(file);
-        client.sendMessage(number, media ,{ sendAudioAsVoice: true });
-    }
-}
-
-/**
  * Enviamos un mensaje simple (texto) a nuestro cliente
  * @param {*} number 
  */
 const sendMessage = async (client, number = null, text = null, trigger = null) => {
-   setTimeout(async () => {
+
     number = cleanNumber(number)
     const message = text
-    client.sendMessage(number, message);
-    await readChat(number, message, trigger)
+    console.log("mensaje simple: ", message)
+    await client.sendMessage(number, message)
     console.log(`⚡⚡⚡ Enviando mensajes....`);
-   },DELAY_TIME)
+    await readChat(number, message, trigger)
+    console.log(`⚡⚡⚡ Guardando mensajes....`);
+    return
 }
 
 /**
@@ -60,7 +65,7 @@ const sendMessage = async (client, number = null, text = null, trigger = null) =
 const sendMessageButton = async (client, number = null, text = null, actionButtons) => {
     number = cleanNumber(number)
     const { title = null, message = null, footer = null, buttons = [] } = actionButtons;
-    let button = new Buttons(message,[...buttons], title, footer);
+    let button = new Buttons(message, [...buttons], title, footer);
     client.sendMessage(number, button);
 
     console.log(`⚡⚡⚡ Enviando mensajes....`);
@@ -95,7 +100,7 @@ const lastTrigger = (number) => new Promise((resolve, reject) => {
  */
 const readChat = async (number, message, trigger = null) => {
     number = cleanNumber(number)
-    await saveMessage( message, trigger, number )
+    await saveMessage(message, trigger, number)
     console.log('Saved')
 }
 

@@ -14,9 +14,12 @@ const cleanNumber = (number) => {
 
 const saveExternalFile = (url) => new Promise((resolve, reject) => {
     const ext = url.split('.').pop()
+    console.log("recorte 1: ", ext);
+    const exteFina = ext.split('?');
+    console.log("exte Fina", exteFina);
     const checkProtocol = url.split('/').includes('https:');
     const handleHttp = checkProtocol ? https : http;
-    const name = `${Date.now()}.${ext}`;
+    const name = `${Date.now()}.${exteFina[0]}`;
     const file = fs.createWriteStream(`${__dirname}/../mediaSend/${name}`);
     console.log(url)
      handleHttp.get(url, function(response) {
@@ -34,6 +37,7 @@ const saveExternalFile = (url) => new Promise((resolve, reject) => {
 })
 
 const checkIsUrl = (path) => {
+    console.log("checkIsUrl: ", path);
     try{
         regex = /^(http(s)?:\/\/)[\w.-]+(?:\.[\w\.-]+)+[\w\-\._~:/?#[\]@!\$&'\(\)\*\+,;=.]+$/i;
         match = path.match(regex);
